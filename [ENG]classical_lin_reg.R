@@ -631,7 +631,7 @@ lillie.test(modeloutout$residuals)
   
 bptest(wage ~year+ age + V11 + V12 + maritl + education + health + health_ins, data= train.out.out)
 
-# p-value is smaller than 0.05, so the hypothesis that errors have unrestricted variance can be rejected.
+# p-value is smaller than 0.05, so the hypothesis that errors have constant variance can be rejected.
 
 ## Conclusion
 
