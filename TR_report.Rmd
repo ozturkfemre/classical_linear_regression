@@ -1,0 +1,659 @@
+---
+title: "Classical Linear Regression"
+author: "Fatih Emre Öztürk"
+date: "2022-12-04"
+output: html_document
+---
+
+```{r warning=FALSE, include=FALSE}
+library(corrplot)
+library(nortest)
+library(ISLR)
+library(Hmisc)
+library(caret)
+library(dplyr)
+library(ModelMetrics)
+library(lmtest)
+library(car)
+library(olsrr)
+library(tidyverse)
+library(moments)
+library(bestNormalize)
+library(magrittr)
+```
+
+```{r echo=TRUE, warning=TRUE}
+df <- Wage
+```
+
+## Veri Seti Bilgisi
+
+Veri setinde 3000 gözlem 11 değişken bulunmaktadır. Veri setinde yer alan değişkenlerin bilgisi ise aşağıdaki tablodaki gibidir:
+
+| Değişken İsmi | Anlamı                                 |
+|---------------|----------------------------------------|
+| Year          | Maaş bilgisinin edinildiği yıl         |
+| Age           | İşçinin yaşı                           |
+| Maritl        | Medeni durum                           |
+| Race          | İşçinin ırkı                           |
+| Region        | Ülkenin bölgesi                        |
+| Jobclass      | İşin tipi ile ilgili endüstriyel bilgi |
+| Health        | İşçinin sağlık durumu                  |
+| Health_ins    | İşçinin sağlık sigortası               |
+| Logwage       | İşçilerin maaşının logaritması         |
+| Wage          | İşçilerin maaşı                        |
+
+## Test-Train Ayrımı
+
+```{r echo=TRUE, warning=FALSE}
+smp_size <- floor(0.75 * nrow(df)) 
+set.seed(2021900444) 
+train_ind <- sample(nrow(df), size = smp_size, replace = FALSE)
+train <- df[train_ind, ]
+test <- df[-train_ind, ]
+
+```
+
+## Tanımlayıcı İstatistikler
+
+```{r echo=FALSE}
+summary(train)
+```
+
+**Sayısal değişkenlerin tanımlayıcı istatistikleri incelendiğinde:**
+
+-   Year değişkeninin range'inin oldukça düşük(6) olduğu dikkat çekmektedir. Sayısal olmasına rağmen kategorik davrandığı fark edilmiştir. Bu sebeple bu değişkeni kategorikleştirmek düşünülebilir.
+
+-   Age değişkeninin mean ile medyanı birbirine oldukça yakın çıkmıştır.
+
+-   logwage değişkeninin tanımlayıcı istatistiği incelendiğinde mean ile median değerleri birbirine oldukça yakın olduğı, çarpıklığın yok denilebilecek kadar az olduğu fark edilmiştir.
+
+-   Wage değişeninin mean'i mediandan yüksek çıkmıştır. Bu sebeple sağa çarpık olabileceği düşünülmektedir. Ayrıca 1. kartil(85) ile min değer(20) değer arasındaki fark düşünüldüğünde aykırı değer olabileceği varsayılmaktadır. Boxplot analizi ile daha sağlıklı bir yorum yapmak mümkün olabilir.
+
+**Kategorik değişkenlerin tanımlayıcı istatistikleri incelendiğinde:**
+
+-   Medeni durumu gösteren faktör değişkeninde çok fazla level olduğu fark edilmiştir.
+
+-   Grafik incelemesi sonrası bu seviyelerin düşürülüp düşürülmeyeceğine karar verilecektir.
+
+-   Irk bilgisini içeren değişkende Beyaz ırkının çokluğu dikkat çekmekle birlikte bölge bilgisini içeren değişkene bakıldığında anlaşılmıştır.
+
+-   Eğitim bilgisini içeren grafik incelendiğinde "Some College" level'ı anlaşılmamış, yarıda bırakmış olabileceği düşünülmektedir. Grafik incelemesi sonrası bu değişkenin levellerinde de değişikliğe gidilebileceği düşünülmektedir.
+
+-   Region değişkeninde Middle Atlantic dışında bir bilgi olmadığı fark edilmiştir. Başka seviye olmaması bu değişkenin hiçbir farklılık yaratmayacağını düşündürtmüştür. Bu sebeple bu değişkeni modele katmanın bir anlamı yoktur. Analiz sonucunda yapılacak olan tahmin yalnızca Middle Atlantic bölgesinde yaşayan işçiler için olacaktır.Bu sebeple bu değişken veri setinden çıkarılmıştır.
+
+-   Jobclas değişkeninin iki seviyesi olduğu, bu seviyelere sahip gözlem değerlerinin de birbirlerine oldukça yakın olduğu fark edilmiştir.
+
+-   Health değişkeninin seviyelerinde Very Good değişkeninin daha fazla gözlemi olduğu fark edilmiştir.
+
+-   Health Insurance değişkeni incelendiğinde işçilerin büyük bir çoğunluğunun sigortası olduğu fark edilmiştir.
+
+```{r warning=FALSE, include=FALSE}
+test <- test[-6]
+train <- train[-6]
+```
+
+### Sayısal Değişkenlerin Grafik Analizi
+
+```{r}
+par(mfrow = c(1,4))
+
+boxplot(test$year)
+boxplot(test$age)
+boxplot(test$logwage)
+boxplot(test$wage)
+```
+
+Sayısal değerlerin kutu grafikleri incelendiğinde Age değişkeninde bir adet, logwage ve wage değişkenlerinde oldukça fazla aykırı gözlem olduğu fark edilmiştir. Bağımlı değişken seçimi olarak elimizde olan iki seçenek logwage ve wage değişkenlerinin dağılımları ile ilgili yorum yapabilmek için, bu iki değişkenin histogram grafiği ile normallik testleri yapılacaktır.
+
+2.  Logwage
+
+```{r}
+fun <- dnorm(test$logwage, mean = mean(test$logwage), sd = sd(test$logwage))
+
+hist(test$logwage, main = "Log(Wage) histogramı", ylab = "Frekans", xlab = "Log(Wage)",col="burlywood2",
+     border="burlywood4", probability = T, ylim = c(0, max(fun) + 1))
+
+lines(density(test$logwage), col = 9, lwd = 2)
+```
+
+Logwage değişkeninin iki tepeli olduğu histogram grafiğinden anlaşılmıştır. Sola çarpıklık da görülmektedir. Sola çarpıklık skewness(-0.12) ile de sağlanmıştır.
+
+1.2 : Normallik Testleri
+
+İki testin hipotezleri de aynı olduğu için hipotezler yalnızca bir kere gösterilmek istenilmiştir.
+
+Ho : Logwage değişkeni normal dağılmıştır.
+
+Ha : Logwage değişkeni normal dağılmamaktadır.
+
+```{r}
+ad.test(test$logwage)
+shapiro.test(test$logwage)
+```
+
+Logwage değişkeni için yapılan iki hipotez testinin p değerleri 0.05'ten küçük olduğu için %95 güvenle Ho: değişkenler normal dağılır hipotezini reddetmek için yeterli delile sahip olduğumuz çıkarımını yapmak mümkündür.
+
+2.  Wage
+
+```{r}
+fun <- dnorm(test$wage, mean = mean(test$wage), sd = sd(test$wage))
+
+hist(test$wage, main = "Wage histogramı", ylab = "Frekans", xlab = "Wage",col="burlywood2",
+     border="burlywood4", probability = T, ylim = c(0, max(fun)))
+
+lines(density(test$wage), col = 9, lwd = 2)
+```
+
+Wage değişkeninin iki tepeli olduğu histogram grafiğinden anlaşılmıştır. Sağa çarpıklık da görülmektedir. Uç değer olarak da düşünebileceğimiz 250 ve fazlası değerler çıkarılırsa normallik sağlanabilir.
+
+Ancak yine de normallik sınamaları ile daha sağlıklı bir yorum yapılmak istenilmiştir.
+
+2.1 Normallik Testleri
+
+İki testin(Anderson- Darling ve Shapiro-Wilks) hipotezleri de aynı olduğu için hipotezler yalnızca bir kere gösterilmek istenilmiştir.
+
+Ho : wage değişkeni normal dağılmıştır.
+
+Ha : wage değişkeni normal dağılmamaktadır.
+
+```{r}
+ad.test(test$wage)
+shapiro.test(test$wage)
+
+```
+
+Wage değişkeni için yapılan iki hipotez testinin p değerleri 0.05'ten küçük olduğu için %95 güvenle Ho: değişkenler normal dağılır hipotezini reddetmek için yeterli delile sahip olduğumuz çıkarımını yapmak mümkündür. Ancak aykırı gözlemlerin çıkartılması sonrası çarpıklığın daha az olacağı ipucunu veren histogram grafiği sayesinde logwage değişkenine kıyasla normalleştirmesi daha kolay olacağı düşünülmektedir. Bu sebeple wage değişkeni ile devam edilme kararı alınmıştır.
+
+Değişkenin normal dağılmaması, analizin ilerleyen bölümlerinde hataların normal dağılmasını da engelleyebilecek bir ayrıntıdır. Değişkenin normal dağılmamasının sebebinin aykırı gözlemler olduğu histogram grafiğinde görülmektedir. Ancak bu aykırı gözlemlerin çıkarılıp çıkarılmayacağına model geliştirme kısmında karar verilecektir.
+
+### Kategorik Değişkenlerin Grafik Analizi
+
+```{r warning=FALSE}
+indexes = sapply(train, is.factor)
+indexes["wage"] = TRUE
+indexes["region"] = FALSE
+train[,indexes]%>%
+  gather(-wage, key = "var", value = "value") %>% 
+  ggplot(aes(x = value, y = wage, color = value)) +
+  geom_boxplot() +
+  facet_wrap(~ var, scales = "free")+
+  theme(axis.text.x = element_text(angle = 30, hjust = 0.85),legend.position="none")
+```
+
+Kategorik değişkenlerin wage değişkeni ile ilişkisini içeren grafik incelendiğinde:
+
+-   Eğitim seviyesi arttıkça maaşta bir artık gözlemlenmektedir. Bu sebeple model için iyi bir değişken olabileceği düşünülmektedir.
+
+-   Health, Health Insurance, Jobclass ve Race değişkenlerinin çok büyük bir etkisi olmadığı gözlemlenmiştir. Bu değişkenlerle devam edilip edilemeyeceğine değişken seçimi kısmında karar verilecektir.
+
+-   Medeni durumu gösteren grafik incelendiğinde ise Never Married, Divorced ve Separated değişkenlerinin çok da farklı olmadığı fark edilmiştir. Aslında bekar anlamına gelen bu 3 seviyeyi tek çatı altında birleştirerek değişkenin seviyelerini "Single, Divorced ve Married olmak üzere üçe düşürmek mantıklı olabilir. İlerleyen bölümlerde bu olasılık üzerinde düşünülecektir.
+
+### Korelasyon Analizi
+
+```{r}
+cor(test[c(1,2,9,10)])
+```
+
+Sayısal değişkenlerin korelasyon değerleri incelendiğinde bağımlı değişken wage ile year değişkeni arasında (0.05) korelasyon bulunmamaktadır. Year değişkeni sayısal bir değişken olmasına rağmen kategorik davranan bir değişken olarak dikkat çekmektedir. Belki bu değişkeni kategorik olarak kullanmak bir değişikliğe sebep olabilir. İlerleyen bölümlerde bu ihtimal dikkate alınacaktır. Bağımlı değişken wage ile bağımsız değişken age arasında oldukça az(0.25) pozitif bir korelasyon bulunduğu saptanmıştır.
+
+## İlk Model
+
+```{r echo=FALSE, warning=FALSE}
+model1 <- lm(wage ~ year + age + maritl + race + education + jobclass + health + health_ins, data = train)
+
+summary(model1)
+```
+
+**Model Geçerliliği F Hipotez Testi**
+
+Ho : Bağımlı değişken ve bağımsız değişkenler arasında doğrusal bir ilişki bulunmamaktadır.
+
+Ha : Bağımlı değişken ile en az bir bağımsız değişken arasında doğrusal bir ilişki bulunmaktadır. (Bi != 0)
+
+Varyans analizine göre oluşturulan modelin F istatistiği 70.22 olarak saptanmıştır. F istatistiğinin p değeri 0.05 önem düzeyinden küçük olduğu için %95 güven düzeyinde Ho reddetmek için yeterli kanıta sahip olduğumuz söylenebilir. En az bir kat sayı model için anlamlıdır.
+
+**Regresyon Katsayılarının Anlamlılığına İlişkin Hipotez Testi**
+
+Ho : Eğim katsayısı 0'dan önemli ölçüde farklı değildir.
+
+Ha : Eğim katsayısı 0'dan önemli ölçüde farklıdır.
+
+Aşağıda belirtilen değişkenlerin p değeri 0.05'ten küçük olduğu için %95 güvenle eğim katsayısının sıfırdan önemli ölçüde farklı olmadığı hipotezi reddedilemez; dolayısıyla değişken(ler) anlamlıdır:
+
+year, age, maritl2. Married, education faktörünün tüm levelları, jobclass, health ve health insurance
+
+## VIF
+
+```{r echo=FALSE, warning=FALSE}
+vif(model1)
+```
+
+Modelin VIF değerleri incelendiğinde hiçbir bağımsız değişkenin VIF değeri 5'ten büyük çıkmadığı için modelde herhangi bir bağlantı problemi bulunmamaktadır.
+
+## Olası en iyi Alt Küme Değişken Seçimi
+
+```{r echo=FALSE, warning=FALSE}
+all.steps <- ols_step_all_possible(model1)
+plot(all.steps)
+```
+
+Tüm metriklere(Rsquare, Adj.R Square, Cp, AIC, SBIC ve SBC) göre en iyi sonuç veren modeller 255(full model), 248, 247, 219, 163, 93, 37, 1 olarak saptanmıştır.Bu modeller kendi aralarında kıyaslandığında Adjusted Rsquare değerleri arasında dikkat çeken bir farklılık bulunmamaktadır. Rsquare, AIC, SBIC ve SBC kriterleri incelendiğinde de ayrım yapmanın değerler birbirine yakın olduğu için mümkün olmadığı fark edilmiştir. Ayrım yapabilmek için en iyi seçeneğin Cp değerlerine bakmak olduğu fark edilmiştir.
+
+Cp değerlerine bakıldığında ise Cp değeri parametre sayısından büyük olmayan gözlemler(yanlılığı engellemek için) seçilmiştir. Model seçenekleri 255(full model), 248, 247 ve 219 olarak azaltılmıştır. Bu model seçeneklerinin Cp değerleri de ayrıntılı olarak incelendiği zaman Cp değeri parametre sayısına en yakın olarak dikkat çeken 219. model, en iyi model olarak seçilmiştir. Bu model seçeneğinin seçilmesindeki bir başka neden ise parametre sayısıdır. Önerilen diğer model seçeneklerindeki parametre sayısı 219. modelden fazla olmasına rağmen; Adj. R square ve R square değerlerinde kayda değer bir artış olmamıştır. Bu da o bağımsız değişkenlerin eklenmesinin modelin açıklayıcılığı üzerinde olumlu bir etkisi olmadığını işaret etmektedir. Ancak hatalar üzerinde karşılaştırma yapabilmek için üç model seçilmiştir. Bu üç model 247,248 ve 219. modeldir. Bu modellerin önerdiği değişken sayıları aşağıdaki gibidir:
+
+```{r echo=FALSE}
+cat("219. Model: ", all.steps$predictors[219])
+cat("\n")
+cat("247. Model: ", all.steps$predictors[247])
+cat("\n")
+cat("248. Model: ", all.steps$predictors[248])
+```
+
+## Performans Kriterlerine Göre Uygun Model Seçimi
+
+```{r}
+model219 <- lm(wage ~year+ age + maritl + education + health + health_ins, data=train)
+model247 <- lm(wage ~ year+age+ maritl+ education +jobclass+ health + health_ins, data=train)
+model248 <- lm(wage ~ year+ age + maritl + education + jobclass + health + health_ins, data=train)
+
+predictions1 <- predict(model219,test)
+predictions2 <- predict(model247,test)
+predictions3 <- predict(model248,test)
+
+RMSE1 <- RMSE(predictions1, test$wage)
+RMSE2 <- RMSE(predictions2, test$wage)
+RMSE3 <- RMSE(predictions3, test$wage)
+
+cbind(RMSE1,RMSE2, RMSE3)
+```
+
+Model 219, model 247 ve model 248'in test veri setleri ile yapılmış olan tahminlerinin Root Mean Square Error değerleri incelendiğinde arada anlamlı bir fark olmadığı fark edilmiştir. En düşük hataya sahip olan modeller, 247 ve 248. modeller olarak saptanmıştır.
+
+```{r}
+mae1 <- mae(predictions1, test$wage)
+mae2 <- mae(predictions2, test$wage)
+mae3 <- mae(predictions3, test$wage)
+
+cbind(mae1,mae2, mae3)
+```
+
+Model 219, model 247 ve model 248'in test veri setleri ile yapılmış olan tahminlerinin Mean Absolute Error değerleri incelendiğinde arada anlamlı bir fark olmadığı saptanmıştır. En düşük hataya sahip olan model, 219. model olarak saptanmıştır.
+
+Tahmin hataları ve olası alt küme değişken yönteminin çıktıları incelendiğinde aşağıdaki sebeplerden dolayı 219. model ile devam edilme kararı alınmıştır:
+
+-   Tahmin hataları arasında çok büyük bir fark olmaması,
+
+-   Rsquare ve Adj.Rsquare değerlerinde kayda değer bir artış sağlanmaması,
+
+-   Değişken sayısının diğer modellere göre daha az olması .
+
+    Son kararla oluşturulan model aşağıdaki gibidir:
+
+```{r}
+modelbest <-  lm(wage ~year+ age + maritl + education + health + health_ins, data=train)
+```
+
+## Hataların Normalliği Varsayımı
+
+```{r warning=FALSE}
+fun <- dnorm(modelbest$residuals, mean = mean(modelbest$residuals), sd = sd(modelbest$residuals))
+
+hist(modelbest$residuals, ylab = "Frekans", xlab = "Hatalar", main = "Hataların Histogram Grafiği", col="burlywood2",
+     border="burlywood4", probability = T, ylim = c(0, max(fun) + 0.01))
+
+
+lines(density(modelbest$residuals), col = 9, lwd = 2)
+
+```
+
+Hataların histogram grafiği incelendiğinde bariz bir şekilde sağa çarpıklık fark edilmektedir. Daha önce de bu çarpıklığın olacağı öngörülmüştü. Bunun sebebi bağımlı değişkenin normal dağılmaması olabilir. Bu sorun ile model geliştirme kısmında mücadele edilecektir.
+
+**Normallik Hipotez Tesi**
+
+Shapiro-Wilk Normallik Testi Hipotezleri:
+
+Ho : Hatalar normal dağılmaktadır.
+
+Ha : Hatalar normal dağılmamaktadır.
+
+```{r}
+shapiro.test(modelbest$residuals)
+```
+
+P değeri 0.05'ten küçük olduğu için %95 güvenle hatalar normal dağıldığı hipotezini reddetmek için yeterli kanıt vardır.
+
+## Hataların Sabit Varyanslılığı
+
+BP test hipotezleri:
+
+Ho: Hatalar sabit varyanslıdır.
+
+Ha: Hatalar sabit varyanslı değildir.
+
+```{r}
+bptest(wage ~year+ age + maritl + education + health + health_ins, data=train)
+```
+
+P değeri 0.05'ten küçük olduğu için %95 güvenle hatalar sabit varyanslıdır hipotezi reddedilebilir.
+
+```{r echo=FALSE, warning=FALSE}
+par(mfrow = c(2,2))
+plot(modelbest)
+
+```
+
+Residuallar ile Fitted Valuelar arasındaki grafik incelendiğinde bir daralma gözlemlenmemiştir. Hataların sabit varyanslı olmadığı görülmektedir. Ayrıca uç değerlerin modeli baskıladığı da dikkat çekmektedir. Uç değerlerin veri setinden çıkarılması mantıklı bir hareket olabilir.
+
+## Uç Değer Analizi
+
+```{r}
+standardized.residuals<-
+  modelbest$residuals/sqrt(var(modelbest$residuals))
+
+plot(modelbest$fitted.values,standardized.residuals, xlab = "Tahmin Değerleri", ylab = "Standarlaştırılmış Artıklar")
+abline(h=0)
+abline(h=-3)
+abline(h=3)
+```
+
+Tahmin değerleri ile standartlaştırılmış artıklar grafiği incelendiğinde standartlaştırılmış artık değeri -3'den küçük, 3'den büyük olan 62 adet artık saptanmıştır. Bu 62 değer, uç değer olarak yorumlanmıştır.
+
+## Kaldıraç Analizi
+
+```{r}
+st.res <- modelbest$residuals/sd(modelbest$residuals) #modelin hatasını bulmak gerekir, degrees of freedom hatası yüzünden
+plot(hatvalues(modelbest),st.res)
+abline(h=c(-2,2),v=2*mean(hatvalues(modelbest)))
+```
+
+Hat değerleri ile standardized residuals arasındaki grafik incelendiğinde hiç kötü kaldıraç olmadığı gözlemlenmiştir. İyi kaldıraç sayısı ise 86 olarak saptanmıştır.
+
+## Cook's Distance
+
+```{r}
+plot(train$wage,cooks.distance(modelbest))
+abline(h=4/(length(train$wage)-6))
+```
+
+Cook's Discance grafiği incelendiğinde 101 adet etkin gözlem olduğu saptanmıştır. Grafikte outlier olarak saptanan gözlemlerin hepsinin etkin gözlem olduğu fark edilmiştir. Demek ki aykırı gözlemler modelin eğimine çok etki yapıyor. Model geliştirmede bu konuda değişiklikler yapmak mantıklı olabilir.
+
+## Model Geliştirme
+
+**Eğitim Durumu Değişkeni**
+
+Tanımlayıcı istatistik kısmında düşünülen level birleştirme işlemi rapor dışında veri setine uygulanmış ancak birleştirme sonrasında da Married dışındaki diğer level'ların anlamlı olmadığı fark edilmiştir. Bu sebeple bu değişiklik rapora eklenmemiştir. Kurulan modellerin hepsinde medeni durumu belirten factorun sadece married level'ının anlamlı olduğu saptanmıştır. Bu sebeple model geliştirme yöntemine bu factorun seviyesini ikiye düşürerek(Married 1, değil 0) devam edilecektir.
+
+```{r}
+train %<>%  mutate(maritl = ifelse(train$maritl == "2. Married", 1, 0)) 
+train$maritl <- as.factor(train$maritl)
+str(train)
+```
+
+Bu kısma kadar yapılan değişikliklerin hiçbiri modelin varsayımları sağlamasına yardımcı olmamıştır. Bağımlı değişkenin normal dağılmıyor oluşu buna sebep olabilir.Bu sebeple bağımlı değişkenin normal dağılmasını sağlamak modeli iyileştirmek adına yapılabilecek ilk adım olabilir. bestNormalize paketi kullanılarak Y'nin normal dağılması sağlanmaya çalışılacaktır.
+
+```{r}
+bestNormalize(test$wage)
+```
+
+bestNormalize paketi bağımlı değişkenin normalleşmesi için aşağıdaki dönüşümleri önermiştir: boxcox, yeo-johnson, arcsinh. Buna ek olarak tanımlayıcı istatistik kısmında logaritması alınan wage değişkenin sola çarpık olduğu gözlemlenmişti. Bu sebeple bestNormalize'ın önermelerine ek olarak bir de logaritması alınmış wage'in karekökü alınmıştır. Her dönüşümü sonrası normallik sınamaları yapılmıştır.
+
+**Box Cox Dönüşümü**
+
+```{r}
+boxwage <- boxcox(train$wage)
+ad.test(boxwage$x.t)
+shapiro.test(boxwage$x.t)
+```
+
+İki testin de hipotezleri aşağıdaki gibidir:
+
+Ho : Dönüştürülmüş değişken normal dağılmaktadır.\
+Ha : Dönüştürülmüş değişken normal dağılmamaktadır.
+
+P değeri 0.05'ten küçük olduğu için %95 güvenle değişkenin normal dağıldığı hipotezini reddetmek için yeterli kanıt vardır.
+
+**Yeo Johnson Dönüşümü**
+
+```{r}
+yeowage <- yeojohnson(train$wage)
+ad.test(yeowage$x.t)
+shapiro.test(yeowage$x.t)
+```
+
+İki testin de hipotezleri aşağıdaki gibidir:
+
+Ho : Dönüştürülmüş değişken normal dağılmaktadır.\
+Ha : Dönüştürülmüş değişken normal dağılmamaktadır.
+
+P değeri 0.05'ten küçük olduğu için %95 güvenle değişkenin normal dağıldığı hipotezini reddetmek için yeterli kanıt vardır.
+
+**arcsinh dönüşümü**
+
+```{r}
+arcwage <- arcsinh_x(train$wage)
+ad.test(arcwage$x.t)
+shapiro.test(arcwage$x.t)
+```
+
+İki testin de hipotezleri aşağıdaki gibidir:
+
+Ho : Dönüştürülmüş değişken normal dağılmaktadır.\
+Ha : Dönüştürülmüş değişken normal dağılmamaktadır.
+
+P değeri 0.05'ten küçük olduğu için %95 güvenle değişkenin normal dağıldığı hipotezini reddetmek için yeterli kanıt vardır.
+
+**sqrt(log(x)) Dönüşümü**
+
+```{r}
+donusuwage <- sqrt(log(train$wage))
+ad.test(donusuwage)
+shapiro.test(donusuwage)
+
+```
+
+İki testin de hipotezleri aşağıdaki gibidir:
+
+Ho : Dönüştürülmüş değişken normal dağılmaktadır.\
+Ha : Dönüştürülmüş değişken normal dağılmamaktadır.
+
+P değeri 0.05'ten küçük olduğu için %95 güvenle değişkenin normal dağıldığı hipotezini reddetmek için yeterli kanıt vardır.
+
+Önerilen hiçbir dönüşüm Y'nin normalleşmesini sağlamamıştır. Tanımlayıcı istatistikler incelendiği kısımda wage değişkeninin çift tepeli olduğu ve aykırı gözlemlerin çok olduğu fark edilmişti. Bu sebeple ikinci tepeye sebep olan aykırı gözlemlerin veri setinden çıkarılması amaçlanmaktadır. Uç değerlerin bağımlı değişkenden çıkarılmasının normalleştirmeyi sağlayabileceği düşünülmektedir.
+
+**Aykırı Gözlemlerin IQR Yöntemi ile Çıkarılması**
+
+```{r}
+quartiles <- quantile(train$wage, probs=c(.25, .75), na.rm = FALSE)
+IQR <- IQR(train$wage)
+
+Lower <- quartiles[1] - 1.5*IQR
+Upper <- quartiles[2] + 1.5*IQR 
+
+train_no_outlier <- subset(train, train$wage > Lower & train$wage < Upper)
+```
+
+Bağımlı değişkene göre aykırı gözlem olarak saptanan gözlemler veri setinden çıkarıldıktan sonra tekrar hipotez testleri yapılarak normallik sınaması yapılmak istenilmiştir.
+
+```{r}
+ad.test(train_no_outlier$wage)
+shapiro.test(train_no_outlier$wage)
+```
+
+İki testin de hipotezleri aşağıdaki gibidir:
+
+Ho : Dönüştürülmüş değişken normal dağılmaktadır.\
+Ha : Dönüştürülmüş değişken normal dağılmamaktadır.
+
+P değeri 0.05'ten küçük olduğu için %95 güvenle değişkenin normal dağıldığı hipotezini reddetmek için yeterli kanıt vardır.
+
+Uç değerler veri setinden çıkarıldıktan sonra da normalleştirme sağlanamamıştır; ancak biraz olsun yaklaşılmıştır. Histogram grafiği de bu bilgiyi desteklemiştir.
+
+```{r}
+
+fun <- dnorm(train_no_outlier$wage, mean = mean(train_no_outlier$wage), sd = sd(train_no_outlier$wage))
+
+hist(train_no_outlier$wage, col="burlywood2",
+     border="burlywood4", probability = T, ylim = c(0, max(fun)))
+
+lines(density(train_no_outlier$wage), col = 9, lwd = 2)
+```
+
+Histogram grafiği incelendiğinde normale oldukça yakın bir dağılım görülmektedir. Neden normal olmadığı ile ilgili daha iyi bir bilgi sahibi olabilmek amacıyla çarpıklık değerinin incelenmesi istenilmiştir.
+
+```{r}
+skewness(train_no_outlier$wage)
+```
+
+skewness değeri 0'dan büyük olduğu için sağa çarpık olduğu saptanmıştır. Uç değerlerin çıkarıldığı bağımlı değişkenin normalliğinin sağlanması için bestNormalize paketi kullanılacaktır.
+
+```{r}
+bestNormalize(train_no_outlier$wage)
+```
+
+bestNormalize paketi aykırı gözlemler çıkarılmış bağımlı değişkenleri normalleştirmek için en iyi yöntemin orderNorm olduğu saptamıştır. Ordered Quantile (ORQ) normalleştirme dönüşümü, bir vektörün değerlerinin yüzdelik dilimlerine eşlendiği ve daha sonra normal dağılımın aynı yüzdelik dilimine eşlendiği sıralama tabanlı bir prosedürdür. Bağların varlığı olmadan, bu esasen dönüşümün düzgün bir dağılıma yol açmasını garanti eder.
+
+```{r warning=FALSE}
+orderwage <- orderNorm(train_no_outlier$wage)
+
+ad.test(orderwage$x.t)
+shapiro.test(orderwage$x.t)
+```
+
+İki testin de hipotezleri aşağıdaki gibidir:
+
+Ho : Dönüştürülmüş değişken normal dağılmaktadır.\
+Ha : Dönüştürülmüş değişken normal dağılmamaktadır.
+
+P değeri 0.05'ten büyük olduğu için %95 güvenle değişkenin normal dağıldığı hipotezi reddedilemez.
+
+Anderson-Darling ve Shapiro-Wilk normallik testlerinin sonucuna göre bağımlı değişkenin normalliği sağlanmıştır. Bu sebeple bu dönüşüm yapılmış bağımlı değişken ile tekrar model kurulmak istenilmiştir.
+
+```{r}
+trainnormal <- train_no_outlier
+trainnormal$wage <- orderwage$x.t
+
+modelout <- lm(wage ~ year + age + maritl + education + health + health_ins, data = trainnormal)
+summary(modelout)
+```
+
+Aykırı gözlemlerin çıkarılması ve medeni durum faktörünün seviyesinin ikiye düşürülmesi ve bağımlı değişkenin normalliğinin sağlanması sonrasında oluşturulan yeni nodelin çıktısı incelendiğinde; yeni model geçerli olmuş, bütün bağımsız değişkenler anlamlı olarak görülmüştür.
+
+Rapor dışında yapılan denemelerde tek sayısal değişken olan Age değişkeninin ilk önce karesi, ardından küpü alınmıştır. Bu iki değişikliğin de modeli iyileştirdiği fark edilmiştir. Bu sebeple bu değişiklikler de modele eklenecektir.
+
+```{r}
+
+train_deneme <- trainnormal
+train_deneme[11] <- (train_no_outlier$age)^2
+train_deneme[12] <- (train_no_outlier$age)^3
+
+modeldeneme <- lm(wage ~ year + age + V11 + V12 + maritl + education + health + health_ins, data= train_deneme)
+summary(modeldeneme)
+```
+
+Yapılan tüm bu işlemler sonrasında eklenen değişkenlerin hepsi anlamlıdır. Buna ek olarak Rsquare ve Adj.Rsquare değerlerinde %7lik bir açıklayıcılık artışı gözlemlenmiştir. Yeni varsayım kontrolleri sırasında çıkarılabilecek yeni aykırı gözlemler(eğer varsa) sonrasında modelde biraz daha gelişme sağlanabilir.
+
+## Geliştirilen Model Varsayım Kontrolü
+
+```{r}
+fun <- dnorm(modeldeneme$residuals, mean = mean(modeldeneme$residuals), sd = sd(modeldeneme$residuals))
+
+hist(modeldeneme$residuals,col="brown1",
+     border="brown4", ylab = "Frekans", xlab = "Hatalar", main = "Hataların Histogram Grafiği", probability = T, ylim = c(0, max(fun)))
+
+
+lines(density(modeldeneme$residuals), col = 1, lwd = 2)
+```
+
+Hataların histogram grafiği incelendiğinde normale oldukça yakın bir grafik görülmektedir. İki taraftaki kuyruklar da uzun olduğu için skewness değerine bakmak daha sağlıklı bir yorum yapılmasını sağlayacaktır.
+
+```{r}
+skewness(modeldeneme$residuals)
+```
+
+Hataların skewness değeri -0.1 çıkmıştır. Normale oldukça yaklaştığı gözlemlenmiştir. Yine de hipotez testi ile kesin bir yargıya varılmak istenilmiştir.
+
+```{r}
+shapiro.test(modeldeneme$residuals)
+ad.test(modeldeneme$residuals)
+lillie.test(modeldeneme$residuals)
+```
+
+Normal dağılana kadar uygulanan sayıdaki( :) ) normallik testlerinin hipotezleri aşağıdaki gibidir:
+
+Ho : Hatalar normal dağılmaktadır.\
+Ha : Hatalar normal dağılmamaktadır.
+
+Lilliefors normallik testine göre p değeri 0.05'ten büyük olduğu için %95 güvenle değişkenin normal dağıldığı hipotezi reddedilemez.
+
+## Hataların Sabit Varyanslılığı
+
+```{r}
+bptest(wage ~ year + age + V11 + V12 + maritl + education + health + health_ins, data= train_deneme)
+```
+
+P-value 0.05'ten küçük olduğu için %95 güvenle hatalar serbest varyanslıdır hipotezi reddedilebilir.
+
+```{r}
+par(mfrow = c(2,2))
+plot(modelout)
+```
+
+Dörtlü model grafiği incelendiğinde; Hatalar ile Tahmin değerleri arasındaki grafik incelendiğinde hataların sabit varyanslı olmadığı dikkat çekmektedir. Ayrıca hataların uç değerlerinin grafiğin sol kısmında bir baskılama yaptığı görülmektedir. Artıklardaki bu uç değerlerin veri setinden çıkarılmasının modeli daha da iyileştirebileceği ve (belki) hataların sabit varyanslılığı varsayımının sağlanabileceği düşünülmektedir. Bu yüzden bu işlemler yapılacaktır.
+
+```{r}
+standardized.residuals<-
+  modeldeneme$residuals/sqrt(var(modeldeneme$residuals))
+
+plot(modeldeneme$fitted.values,standardized.residuals, xlab = "Tahmin Değerleri", ylab = "Standarlaştırılmış Artıklar")
+abline(h=0)
+abline(h=-3)
+abline(h=3)
+```
+
+Artıklara göre 17 değer uç değer olarak saptanmıştır. Bu değerler veri setinden çıkarılarak yeni model kurulacaktır.
+
+```{r}
+train.out.out <- train_deneme[-c(which(abs(standardized.residuals)>3)),]
+
+modeloutout <- lm(wage ~year+ age + maritl + V11 + V12 + education + health + health_ins, data= train.out.out)
+
+summary(modeloutout)
+```
+
+Artıklara göre uç değer olarak saptanan gözlemlerin veri setinden çıkarılmasıyla oluşan modelin çıktısı incelendiğinde; modelin ve modelde yer alan bütün bağımsız değişkenlerin anlamlı olduğu saptanmıştır. Modelin Rsquare ve Adj.Rsquare değerlerinde yaklşık olarak %2'lik bir artış sağlanmıştır. Varsayımların sağlanıp sağlanmadığı bu sefer yalnızca hipotez testleri ile test edilmek istenilmiştir.
+
+**Hataların Normal Dağılması**
+
+```{r}
+shapiro.test(modeloutout$residuals)
+ad.test(modeloutout$residuals)
+lillie.test(modeloutout$residuals)
+```
+
+Tüm normallik testlerinin hipotezleri aşağıdaki gibidir:
+
+Ho : Hatalar normal dağılmaktadır.\
+Ha : Hatalar değişken normal dağılmamaktadır.
+
+Shapiro-Wilk hariç bütün normallik testlerinin p değeri 0.05'ten büyük olduğu için %95 güvenle değişkenin normal dağıldığı hipotezi reddedilemez.
+
+**Hataların Sabit Varyanslılığı**
+
+```{r}
+bptest(wage ~year+ age + V11 + V12 + maritl + education + health + health_ins, data= train.out.out)
+```
+
+P-value 0.05'ten küçük olduğu için %95 güvenle hatalar serbest varyanslıdır hipotezi reddedilebilir.
+
+## Sonuç
+
+Tüm bu analizler sonucunda:
+
+-   Modelde yer alan bağımlı değişkenin normalliğinin sağlanması modelin Rsquare ve Adj.Rsquare değerini arttırmış; ancak yine de varsayımları sağlamak mümkün olamamıştır.
+
+-   Bu varsayımların sağlanması için standartlaşmış hatalara göre uç değer olarak saptanan gözlemler veri setinden çıkarılmış ve yeni model kurulmuştur. Bu modelde hipotez testleri uyguladığında varsayımların yaklaşılmasına rağmen yine sağlanmadığı fark edilmiştir.
+
+-   Tanımlayıcı istatistikler kısmında da değişkenler arasında doğrusal ilişki olmadığı fark edilmişti. Bağımlı değişken ile doğrusal olarak söyleyebileceğimiz tek ilişki education ileydi. Bu sebeple bu veri setini doğrusal olmayan regresyon modelleriyle denemek daha mantıklı olabilir.
+
+-   Wage değişkeni ile doğrusal ilişkisi olabilecek yeni bağımsız değişkenlerin eklenmesi de mantıklı olabilir.
