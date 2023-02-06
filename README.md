@@ -1,5 +1,5 @@
 # classical_linear_regression
-Classical Linear Regression
+R | Classical Linear Regression
 
 
 This repository contains my classical linear regression project with explanations in both English and Turkish.
