@@ -29,7 +29,7 @@ library(magrittr)
 df <- Wage
 ```
 
-## Veri Seti Bilgisi
+## Data Information
 
 There are 3000 observations 11 variables in the dataset. Variables are
 as follows:
