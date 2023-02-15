@@ -329,15 +329,7 @@ It was expected that such a situation regarding marital status would be
 encountered during the graphical examination of categorical variables.
 These improvements will be made in the part of the model development.
 
-## VIF
 
-```{r echo=FALSE, warning=FALSE}
-vif(model1)
-```
-
-When the VIF values of the model are analyzed, no independent variable
-has a VIF value greater than 5, so there is no connection problem in the
-model.
 
 ## Variable Selection \| All Steps Possible
 
@@ -432,6 +424,16 @@ modelbest <-  lm(wage ~year+ age + maritl + education + health + health_ins, dat
 ```
 
 ## Assumption Check
+
+### VIF
+
+```{r echo=FALSE, warning=FALSE}
+vif(model1)
+```
+
+When the VIF values of the model are analyzed, no independent variable
+has a VIF value greater than 5, so there is no connection problem in the
+model.
 
 ### Normality
 
