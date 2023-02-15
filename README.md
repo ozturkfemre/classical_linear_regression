@@ -13,7 +13,7 @@ In this study, I tried to estimate the wages of workers in the Mid-Atlantic regi
 The [dataset](https://www.re3data.org/repository/r3d100011860) is taken from the `ISLR` package. The dataset contains information about wage and other information for a group of 3000 male workers in the Mid-Atlantic Region. There are 11 variables in the dataset. While 9 of the 11 variables are independent variables, there are 2 dependent variables. One is the salary of workers and the other is log(wage). The information of all variables can be found in the table below.
 
 | Variable   | Meaning                                                                                                                                  |
-|------------|------------------------------------------------------------------------------------------------------------------------------------------|
+|-------------|-----------------------------------------------------------|
 | year       | Year that wage information was recorded                                                                                                  |
 | age        | Age of worker                                                                                                                            |
 | maritl     | A factor with levels `1. Never Married` `2. Married` `3. Widowed` `4. Divorced` and `5. Separated` indicating marital status             |
@@ -92,11 +92,11 @@ In this section, efforts were made to ensure that the model meets the assumption
 
 3.  **Outliers:** Outliers were removed from the data set and the model was improved.
 
-## Assumpiton Check
+### Assumpiton Check
 
 In this section, it is checked whether the model reconstructed after the changes made in the data set meets the assumptions. Although normality and multicolinearity assumptions were met, homoscedasticity assumption was not met.
 
-## Conclusion
+### Conclusion
 
 As a result of all these analyses:
 
