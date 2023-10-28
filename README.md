@@ -1,4 +1,4 @@
-# Classical Linear Regression Project
+# Predicting the wages of workers in the Mid-Atlantic region 
 
 #### OLS
 
